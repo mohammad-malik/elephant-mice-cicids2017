@@ -1,3 +1,11 @@
 # Baseline results (elephant vs. mice)
 
-Run `bash scripts/02_train_models.sh` after preparing the dataset to populate this section with Markdown tables emitted by `src/models/classical_baselines.py`.
+| Model | Accuracy | Precision | Recall | F1 |
+| --- | --- | --- | --- | --- |
+| log_reg | 0.9653 | 0.8353 | 0.3817 | 0.5240 |
+| svm_rbf | 0.9615 | 0.9850 | 0.2348 | 0.3792 |
+| rf | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| lda | 0.9319 | 0.3317 | 0.3548 | 0.3429 |
+| knn | 0.9834 | 0.9028 | 0.7491 | 0.8188 |
+| gnb | 0.9794 | 0.9970 | 0.5896 | 0.7410 |
+| dt | 1.0000 | 1.0000 | 1.0000 | 1.0000 |

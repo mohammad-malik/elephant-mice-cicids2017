@@ -13,7 +13,7 @@ REPORTS_DIR = BASE_DIR / "reports"
 @dataclass(frozen=True)
 class PipelineConfig:
     elephant_percent: float = 5.0
-    random_state: int = 42
+    random_state: int = 67
 
     @property
     def merged_csv(self) -> Path:
