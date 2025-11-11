@@ -13,15 +13,17 @@ elephant-mice-cicids2017/
 │  │  └─ CIC-IDS2017/          # download CSVs here
 │  ├─ intermediate/
 │  │  ├─ cicids2017_merged.csv # merge result
-│  │  └─ cicids2017_features.csv
+│  │  └─ cicids2017_paper_schema.csv
 │  └─ processed/
-│     └─ elephant_mice_flows.csv
+│     ├─ elephant_mice_flows_chebyshev.csv
+│     └─ elephant_mice_flows_paper_small.csv
 ├─ src/
 │  ├─ config.py
 │  ├─ data_prep/
 │  │  ├─ merge_cicids2017.py
-│  │  ├─ clean_features.py
-│  │  └─ label_elephants.py
+│  │  ├─ to_paper_schema.py
+│  │  ├─ label_elephants_chebyshev.py
+│  │  └─ build_experiment_set_chebyshev.py
 │  ├─ models/
 │  │  ├─ classical_baselines.py
 │  │  └─ evaluate.py
@@ -52,12 +54,15 @@ See `scripts/00_download_instructions.txt` for a concise reminder.
 
 | Stage | Script/Notebook | Description |
 | --- | --- | --- |
-| Merge raw CSVs | `src/data_prep/merge_cicids2017.py` | Concatenates all daily captures into one table.
-| Feature cleaning | `src/data_prep/clean_features.py` | Keeps flow-size features analogous to the paper (ports, durations, packet and byte counts) and derives totals.
-| Label creation | `src/data_prep/label_elephants.py` | Marks elephants as the **top 5%** flows by total bytes (configurable).
-| Baselines | `src/models/classical_baselines.py` | Trains LR, SVM, RF, DT, KNN, LDA, NB models to classify elephant vs. mice.
-| Evaluation helper | `src/models/evaluate.py` | Shared metrics/report helpers.
-| Notebooks 01–03 | `notebooks/` | Generate EDA, threshold selection, and modeling figures/tables for publication.
+| Merge raw CSVs | `src/data_prep/merge_cicids2017.py` | Concatenates every daily CIC-IDS2017 capture into one master table. |
+| Paper schema | `src/data_prep/to_paper_schema.py` | Maps the merged file to NFStream-like fields (`src_port`, `dst_port`, `bidirectional_bytes`, first/last seen) and normalizes durations to milliseconds. |
+| Chebyshev labeling | `src/data_prep/label_elephants_chebyshev.py` | Applies the paper’s size-only rule (bytes ≥ mean + 3·std) to mark elephants, adding `target_traffic` and `size_traffic`. |
+| Experiment set | `src/data_prep/build_experiment_set_chebyshev.py` | Samples ~55,726 flows with the same elephant/mice ratio as the full set, facilitating deterministic experiments. |
+| Baselines | `src/models/classical_baselines.py` | Trains LR, SVM, RF, DT, KNN, LDA, NB models using the paper-aligned features, optionally including `size_traffic` as a dummy. |
+| Evaluation helper | `src/models/evaluate.py` | Shared metrics/report helpers. |
+| Notebooks 01–03 | `notebooks/` | Generate the descriptive tables/figures needed for the report. |
+
+The final table used for modeling lives at `data/processed/elephant_mice_flows_paper_small.csv`, while the intermediate schema and Chebyshev-labeled tables remain in `data/intermediate/` and `data/processed/`, respectively, to support downstream analyses or alternative thresholds.
 
 ## Workflow
 
@@ -87,7 +92,7 @@ Each stage writes deterministic outputs into `data/intermediate/` and `data/proc
 ## Methodological notes
 
 - The original paper used a private enterprise backbone trace; this project **mirrors the methodology** using public flows.
-- Elephant detection is operationally defined as “top X% of flows when ordered by total bytes.” The default cutoff is 5%, matching the paper’s reported elephant prevalence.
+- Elephant detection is operationally defined as “bytes ≥ mean + 3·std” (Chebyshev) on `bidirectional_bytes`, matching the paper’s size-only rule and reproducing the ~5% elephant prevalence over ~55,726 sampled flows.
 - Baseline models follow the same family (classical ML with small feature set). Hyperparameters are intentionally conservative to keep comparisons fair and transparent.
 - Notebook outputs (9 figures, 3 tables) are tailored for academic reporting: dataset profiling, threshold justification, and classifier benchmarking.
 

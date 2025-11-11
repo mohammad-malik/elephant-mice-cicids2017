@@ -1,12 +1,4 @@
-"""Train classical ML baselines for elephant vs. mice classification.
-
-Design:
-- Use NFStream-style flow features derived from CIC-IDS2017.
-- Elephant vs. mice labels already constructed upstream (target_traffic).
-- Prefer a fixed-size experiment set (~55k flows, ~5% elephants) to match the
-  original paper's regime; fall back to on-the-fly downsampling if needed.
-"""
-
+"""Train classical baselines on the paper-aligned experiment set."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,102 +21,33 @@ from src.models.evaluate import build_result, format_markdown_table
 from src.utils.logging_utils import get_logger
 
 LOGGER = get_logger("classical_baselines")
+DATA_PATH = CONFIG.paper_small_csv
 
-# Upstream:
-# - CONFIG.labeled_csv -> elephant_mice_flows.csv (full, 2.8M+ rows)
-# - scripts/01_prepare_data.sh also writes elephant_mice_flows_small.csv (~55,726 rows)
-FULL_DATA_PATH: Path = CONFIG.labeled_csv
-SMALL_DATA_PATH: Path = FULL_DATA_PATH.parent / "elephant_mice_flows_small.csv"
-
-# Target size if we ever need to downsample from the full set.
-TARGET_N = 55_726
-
-# Features aligned with the flow representation used in the paper.
-FEATURE_COLS = [
-    "Destination Port",
-    "Flow Duration",
-    "Total Fwd Packets",
-    "Total Backward Packets",
-    "Total Length of Fwd Packets",
-    "Total Length of Bwd Packets",
-    "total_bytes",
-    "total_pkts",
+BASE_FEATURES = [
+    "src_port",
+    "dst_port",
+    "bidirectional_first_seen_ms",
+    "bidirectional_last_seen_ms",
+    "bidirectional_bytes",
 ]
-
-
-def _load_base_frame() -> pd.DataFrame:
-    """Load the experiment dataset.
-
-    Priority:
-    1. If elephant_mice_flows_small.csv exists, use it directly (deterministic).
-    2. Otherwise, load the full labeled CSV and downsample once (stratified).
-    """
-    if SMALL_DATA_PATH.exists():
-        df = pd.read_csv(SMALL_DATA_PATH)
-        df.columns = df.columns.str.strip()
-        LOGGER.info(
-            "Loaded experiment set from %s: %d rows (elephants: %.2f%%)",
-            SMALL_DATA_PATH,
-            len(df),
-            df["target_traffic"].mean() * 100.0,
-        )
-        return df
-
-    # Fallback: build an experiment-sized sample from full data
-    df = pd.read_csv(FULL_DATA_PATH)
-    df.columns = df.columns.str.strip()
-
-    required = FEATURE_COLS + ["target_traffic"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing expected columns in labeled CSV: {missing}")
-
-    df = df.dropna(subset=FEATURE_COLS)
-
-    n_total = len(df)
-    if n_total <= TARGET_N:
-        LOGGER.info(
-            "Full dataset smaller than target; using all %d rows (elephants: %.2f%%)",
-            n_total,
-            df["target_traffic"].mean() * 100.0,
-        )
-        return df
-
-    df_major = df[df["target_traffic"] == 0]
-    df_minor = df[df["target_traffic"] == 1]
-
-    ratio = df_minor.shape[0] / n_total
-    n_minor = max(1, int(TARGET_N * ratio))
-    n_major = TARGET_N - n_minor
-
-    n_major = min(n_major, df_major.shape[0])
-    n_minor = min(n_minor, df_minor.shape[0])
-
-    df_major_sample = df_major.sample(n=n_major, random_state=CONFIG.random_state)
-    df_minor_sample = df_minor.sample(n=n_minor, random_state=CONFIG.random_state)
-
-    df_small = pd.concat([df_major_sample, df_minor_sample], ignore_index=True)
-
-    LOGGER.info(
-        "Downsampled from %d to %d rows (elephants: %.2f%%)",
-        n_total,
-        len(df_small),
-        df_small["target_traffic"].mean() * 100.0,
-    )
-
-    return df_small
+INCLUDE_SIZE_TRAFFIC = True
 
 
 def load_data():
-    df = _load_base_frame()
+    df = pd.read_csv(DATA_PATH)
+    df.columns = df.columns.str.strip()
 
-    # Ensure feature columns exist in whatever we loaded
-    missing = [c for c in FEATURE_COLS if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing feature columns in dataset: {missing}")
+    use_cols = BASE_FEATURES.copy()
+    if INCLUDE_SIZE_TRAFFIC and "size_traffic" in df.columns:
+        df = pd.get_dummies(df, columns=["size_traffic"], drop_first=True)
+        use_cols += [c for c in df.columns if c.startswith("size_traffic_")]
 
-    X = df[FEATURE_COLS]
-    y = df["target_traffic"]
+    for col in ("src_ip", "dst_ip"):
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
+    X = df[use_cols]
+    y = df["target_traffic"].astype(int)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -135,19 +58,17 @@ def load_data():
     )
 
     LOGGER.info(
-        "Train/Test split: %d train / %d test "
-        "(elephants train: %.2f%%, test: %.2f%%)",
+        "Train/Test: %d/%d | elephants: %.2f%% / %.2f%% | features: %s",
         len(X_train),
         len(X_test),
-        y_train.mean() * 100.0,
-        y_test.mean() * 100.0,
+        100 * y_train.mean(),
+        100 * y_test.mean(),
+        use_cols,
     )
-
     return X_train, X_test, y_train, y_test
 
 
 def get_models():
-    """Classical ML baselines as in the paper."""
     return {
         "log_reg": Pipeline(
             [
@@ -179,9 +100,7 @@ def get_models():
             ]
         ),
         "gnb": GaussianNB(),
-        "dt": DecisionTreeClassifier(
-            random_state=CONFIG.random_state,
-        ),
+        "dt": DecisionTreeClassifier(random_state=CONFIG.random_state),
     }
 
 
@@ -189,27 +108,19 @@ def run_baselines() -> None:
     X_train, X_test, y_train, y_test = load_data()
     models = get_models()
 
-    markdown_results = []
-
+    results = []
     for name, model in models.items():
         LOGGER.info("Training %s", name)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
-
-        markdown_results.append(build_result(name, y_test, y_pred))
-
+        results.append(build_result(name, y_test, y_pred))
         LOGGER.info(
             "\n%s",
-            classification_report(
-                y_test,
-                y_pred,
-                zero_division=0,
-                digits=4,
-            ),
+            classification_report(y_test, y_pred, zero_division=0, digits=4),
         )
 
-    print("# Baseline results (elephant vs. mice)\n")
-    print(format_markdown_table(markdown_results))
+    print("# Baseline results (paper-faithful: Chebyshev + paper features)\n")
+    print(format_markdown_table(results))
 
 
 if __name__ == "__main__":

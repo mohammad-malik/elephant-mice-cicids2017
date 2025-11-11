@@ -27,5 +27,17 @@ class PipelineConfig:
     def labeled_csv(self) -> Path:
         return PROCESSED_DIR / "elephant_mice_flows.csv"
 
+    @property
+    def paper_schema_csv(self) -> Path:
+        return INTERMEDIATE_DIR / "cicids2017_paper_schema.csv"
+
+    @property
+    def chebyshev_csv(self) -> Path:
+        return PROCESSED_DIR / "elephant_mice_flows_chebyshev.csv"
+
+    @property
+    def paper_small_csv(self) -> Path:
+        return PROCESSED_DIR / "elephant_mice_flows_paper_small.csv"
+
 
 CONFIG = PipelineConfig()
