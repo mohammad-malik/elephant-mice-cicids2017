@@ -11,6 +11,7 @@ LOGGER = get_logger("label_elephants")
 
 def label_by_quantile(elephant_percent: float = CONFIG.elephant_percent) -> float:
     df = pd.read_csv(IN_PATH)
+    df.columns = df.columns.str.strip()
 
     q = 1.0 - elephant_percent / 100.0
     threshold = df["total_bytes"].quantile(q)

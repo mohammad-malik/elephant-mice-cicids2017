@@ -23,7 +23,6 @@ from src.utils.logging_utils import get_logger
 LOGGER = get_logger("classical_baselines")
 DATA_PATH = CONFIG.labeled_csv
 FEATURE_COLS = [
-    "Source Port",
     "Destination Port",
     "Flow Duration",
     "Total Fwd Packets",
@@ -37,6 +36,7 @@ FEATURE_COLS = [
 
 def load_data(data_path: Path = DATA_PATH):
     df = pd.read_csv(data_path)
+    df.columns = df.columns.str.strip()
     X = df[FEATURE_COLS]
     y = df["target_traffic"]
     return train_test_split(

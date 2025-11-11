@@ -1,0 +1,12 @@
+# Ignore dataset downloads and pipeline outputs
+data/raw/
+data/intermediate/
+data/processed/
+
+# Cache and environment artifacts
+__pycache__/
+*.py[cod]
+.venv/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
