@@ -1,0 +1,6 @@
+# CIC-IDS2017 download instructions
+
+1. Request credentials at https://www.unb.ca/cic/datasets/ids-2017.html and download the 2017 ZIP archive (or use the mirrored Kaggle dataset if already approved).
+2. Extract every CSV into `data/raw/CIC-IDS2017/`. Keep default filenames since scripts glob `*.csv`.
+3. Verify disk space (~15 GB uncompressed) before extraction.
+4. Rerun `bash scripts/01_prepare_data.sh` whenever you replace or augment the CSVs.
