@@ -18,10 +18,20 @@ LABELED_CSV = INTERMEDIATE_DIR / "cicids2017_labeled_chebyshev_glf.csv"
 EXPERIMENT_CSV = PROCESSED_DIR / "elephant_mice_flows_paper_small.csv"
 
 
+PAPER_FEATURE_COLUMNS: tuple[str, ...] = (
+    "src_port",
+    "dst_port",
+    "src2dst_first_seen_ms",
+    "src2dst_last_seen_ms",
+    "bidirectional_bytes",
+)
+
+
 @dataclass(frozen=True)
 class PipelineConfig:
-    elephant_percent: float = 5.0
+    elephant_percent: float = 0.09
     random_state: int = 67
+    feature_columns: tuple[str, ...] = PAPER_FEATURE_COLUMNS
 
     @property
     def merged_csv(self) -> Path:

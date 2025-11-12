@@ -59,8 +59,8 @@ See `scripts/00_download_instructions.txt` for a concise reminder.
 | Merge raw CSVs | `src/data_prep/merge_cicids2017.py` | Concatenates every GLF daily capture into `data/intermediate/cicids2017_merged.csv` with typed columns and strict decoding modes. |
 | Paper schema | `src/data_prep/to_paper_schema_from_generated.py` | Maps the merged file to NFStream-like fields, coerces ports/protocols, converts Flow Duration to milliseconds, and asserts the Flow Bytes/s sanity check. |
 | Paper base | `src/data_prep/build_experiment_set_paper.py` | Samples ~55,726 flows from the schema, logs bidirectional byte quantiles, and writes `data/intermediate/cicids2017_paper_base_glf.csv`. |
-| Chebyshev labeling | `src/data_prep/label_elephants_chebyshev.py` | Aggregates bytes per (`src_ip`,`dst_ip`,`src_port`,`dst_port`), thresholds at `μ+3σ`, propagates the label to every flow, writes metadata to `artifacts/threshold.json`, and outputs `data/intermediate/cicids2017_labeled_chebyshev_glf.csv`. |
-| Baselines | `src/models/classical_baselines.py` | Trains LR, SVM, RF, DT, KNN, LDA, NB models using the five paper-aligned features (ports, first/last seen, bytes) with class priors logged. |
+| Chebyshev labeling | `src/data_prep/label_elephants_chebyshev.py` | Computes the μ+3σ Chebyshev cutoff from aggregated 4-tuple bytes, applies it per flow (online view), logs stats to `artifacts/threshold.json`, writes the full schema to `data/intermediate/cicids2017_labeled_chebyshev_glf.csv`, and publishes the trimmed modeling subset to `data/processed/elephant_mice_flows_paper_small.csv`. |
+| Baselines | `src/models/classical_baselines.py` | Runs LR, SVM, RF, DT, KNN, LDA, NB over the five paper features using 5-fold stratified group CV (4-tuple groups), aggregates accuracy/precision/recall/F1, and saves a confusion matrix plot to `reports/plots/confusion_matrix.png`. |
 | Evaluation helper | `src/models/evaluate.py` | Shared metrics/report helpers. |
 | Notebooks 01–03 | `notebooks/` | Generate the descriptive tables/figures needed for the report. |
 
@@ -94,8 +94,8 @@ Each stage writes deterministic outputs into `data/intermediate/` and `data/proc
 ## Methodological notes
 
 - The original paper used a private enterprise backbone trace; this project **mirrors the methodology** using public flows.
-- Elephant detection is operationally defined as “bytes ≥ mean + 3·std” (Chebyshev) on the **per 4-tuple** aggregated `bidirectional_bytes`, matching the paper’s size framing and reproducing roughly 5% elephants over the 55,726-row working set.
-- Baseline models follow the same family (classical ML with small feature set). Hyperparameters are intentionally conservative to keep comparisons fair and transparent.
+- Elephant detection is operationally defined as “bytes ≥ μ + 3·σ” (Chebyshev). The cutoff is learned from aggregated 4-tuples but applied to each flow’s bytes to avoid future knowledge; on CIC-IDS2017 this yields only ≈0.09% elephants (49 of 55,726 flows), far below the ≈5% reported in the proprietary trace.
+- Baseline models follow the same family (classical ML with a five-feature vector) and are now evaluated with 5-fold stratified group cross-validation so that no 4-tuple spans folds. Metrics are reported as means ± std. dev., and the best model’s confusion matrix is stored in `reports/plots/confusion_matrix.png`.
 - Notebook outputs (9 figures, 3 tables) are tailored for academic reporting: dataset profiling, threshold justification, and classifier benchmarking.
 
 ## Next steps

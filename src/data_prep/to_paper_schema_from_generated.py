@@ -164,7 +164,7 @@ def main() -> None:
     df["bidirectional_bytes"] = df["src2dst_bytes"] + df["dst2src_bytes"]
     df["bidirectional_duration_ms"] = duration_s * 1000.0
 
-    ts = pd.to_datetime(df["Timestamp"], errors="coerce", infer_datetime_format=True)
+    ts = pd.to_datetime(df["Timestamp"], errors="coerce")
     if getattr(ts.dt, "tz", None) is not None:
         ts = ts.dt.tz_localize(None)
     ts_int = ts.astype("int64")

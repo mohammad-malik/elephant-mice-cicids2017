@@ -10,9 +10,12 @@ from src.utils.logging_utils import get_logger
 
 LOGGER = get_logger("label_elephants_chebyshev")
 IN_PATH = CONFIG.paper_base_csv
-OUT_PATH = CONFIG.chebyshev_csv
+INTERMEDIATE_OUT_PATH = CONFIG.chebyshev_csv
+PROCESSED_OUT_PATH = CONFIG.paper_small_csv
 THRESHOLD_PATH = Path("artifacts") / "threshold.json"
 KEY_COLS = ["src_ip", "dst_ip", "src_port", "dst_port"]
+FEATURE_COLUMNS = list(CONFIG.feature_columns)
+MODEL_COLUMNS = [*FEATURE_COLUMNS, "target_traffic"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,21 +95,40 @@ def _persist_threshold(
     )
 
 
+def _write_outputs(df: pd.DataFrame) -> None:
+    if missing := [col for col in MODEL_COLUMNS if col not in df.columns]:
+        raise ValueError(f"Missing required model columns: {missing}")
+
+    INTERMEDIATE_OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(INTERMEDIATE_OUT_PATH, index=False)
+    LOGGER.info("Wrote labeled flows (full schema) to %s", INTERMEDIATE_OUT_PATH)
+
+    PROCESSED_OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df_model = df[MODEL_COLUMNS].copy()
+    df_model.to_csv(PROCESSED_OUT_PATH, index=False)
+    LOGGER.info(
+        "Wrote modeling subset (%d rows, %d cols) to %s",
+        len(df_model),
+        len(df_model.columns),
+        PROCESSED_OUT_PATH,
+    )
+
+
 def main(args: argparse.Namespace) -> None:
     df = pd.read_csv(IN_PATH)
     df.columns = df.columns.str.strip()
     series = _add_flow_bytes(df)
 
+    agg = _aggregate_4tuple(df)
+    threshold, mu, sigma = _threshold(agg["bytes_4tuple"])
+    tuple_count = len(agg)
+
     if args.per_flow:
         hook = "flow"
-        threshold, mu, sigma = _threshold(series)
         df["size_traffic"] = series
         df["target_traffic"] = (series >= threshold).astype(int)
-        tuple_count = len(df)
     else:
         hook = "4tuple"
-        agg = _aggregate_4tuple(df)
-        threshold, mu, sigma = _threshold(agg["bytes_4tuple"])
         agg["target_traffic"] = (agg["bytes_4tuple"] >= threshold).astype(int)
         df = df.merge(
             agg[[*KEY_COLS, "bytes_4tuple", "target_traffic"]],
@@ -115,7 +137,6 @@ def main(args: argparse.Namespace) -> None:
         )
         df["target_traffic"] = df["target_traffic"].fillna(0).astype(int)
         df["size_traffic"] = df["bytes_4tuple"].fillna(df["bidirectional_bytes"])
-        tuple_count = len(agg)
         df = df.drop(columns=["bytes_4tuple"])
 
     counts = df["target_traffic"].value_counts().to_dict()
@@ -123,9 +144,7 @@ def main(args: argparse.Namespace) -> None:
     _log_counts(counts, hook, tuple_count, threshold, total)
     _persist_threshold(threshold, mu, sigma, counts, total, hook, tuple_count)
 
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUT_PATH, index=False)
-    LOGGER.info("Wrote labeled flows to %s", OUT_PATH)
+    _write_outputs(df)
 
 
 if __name__ == "__main__":
