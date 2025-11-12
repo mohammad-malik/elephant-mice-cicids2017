@@ -1,8 +1,10 @@
 """Train classical baselines on the paper-aligned experiment set."""
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
+import joblib
 import matplotlib.pyplot as plt
 import pandas as pd
 from pandas.util import hash_pandas_object
@@ -28,6 +30,7 @@ DATA_PATH = CONFIG.paper_small_csv
 GROUP_SOURCE_PATH = CONFIG.chebyshev_csv
 PLOTS_DIR = Path("reports") / "plots"
 CONFUSION_MATRIX_PATH = PLOTS_DIR / "confusion_matrix.png"
+MODEL_ARTIFACT_PATH = Path("artifacts") / "model.joblib"
 
 FEATURE_COLUMNS = list(CONFIG.feature_columns)
 GROUP_COLUMNS = ["src_ip", "dst_ip", "src_port", "dst_port"]
@@ -119,7 +122,7 @@ def _plot_confusion_matrix(model_name: str, y_true: list[int], y_pred: list[int]
     LOGGER.info("Saved confusion matrix to %s", CONFUSION_MATRIX_PATH)
 
 
-def run_baselines() -> None:
+def run_baselines(export_model: bool = False) -> tuple[list, dict]:
     X, y, groups = load_data()
     models = get_models()
     splitter = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=CONFIG.random_state)
@@ -161,10 +164,40 @@ def run_baselines() -> None:
     best_true, best_pred = predictions[best.model]
     _plot_confusion_matrix(best.model, best_true, best_pred)
 
+    if export_model:
+        LOGGER.info("Exporting best model '%s' to %s", best.model, MODEL_ARTIFACT_PATH)
+        MODEL_ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        final_estimator = clone(models[best.model])
+        final_estimator.fit(X, y)
+        joblib.dump(
+            {
+                "model": final_estimator,
+                "features": FEATURE_COLUMNS,
+                "label": "target_traffic",
+            },
+            MODEL_ARTIFACT_PATH,
+        )
+        LOGGER.info("Persisted best model artifact.")
+
     print("# Baseline results (5-fold stratified group CV)\n")
     print(format_markdown_table(aggregated_results))
     return aggregated_results, predictions
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train classical baselines on elephant/mice flows.")
+    parser.add_argument(
+        "--export-model",
+        action="store_true",
+        help="Fit the best cross-validated model on the full dataset and save to artifacts/model.joblib.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    run_baselines(export_model=args.export_model)
+
+
 if __name__ == "__main__":
-    run_baselines()
+    main()

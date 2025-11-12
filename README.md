@@ -62,6 +62,8 @@ See `scripts/00_download_instructions.txt` for a concise reminder.
 | Chebyshev labeling | `src/data_prep/label_elephants_chebyshev.py` | Computes the μ+3σ Chebyshev cutoff from aggregated 4-tuple bytes, applies it per flow (online view), logs stats to `artifacts/threshold.json`, writes the full schema to `data/intermediate/cicids2017_labeled_chebyshev_glf.csv`, and publishes the trimmed modeling subset to `data/processed/elephant_mice_flows_paper_small.csv`. |
 | Baselines | `src/models/classical_baselines.py` | Runs LR, SVM, RF, DT, KNN, LDA, NB over the five paper features using 5-fold stratified group CV (4-tuple groups), aggregates accuracy/precision/recall/F1, and saves a confusion matrix plot to `reports/plots/confusion_matrix.png`. |
 | Evaluation helper | `src/models/evaluate.py` | Shared metrics/report helpers. |
+| Online threshold | `src/online/threshold_updater.py` | Recomputes μ, σ, and the Chebyshev cutoff on a sliding window (default 7 days) and refreshes `artifacts/threshold.json` on an interval so the “periodic/online” narrative remains true in deployment. |
+| Online inference | `src/online/predict.py` | Loads a persisted scikit-learn model plus the refreshed threshold to deliver an early ML prediction and a counting-based override for a single incoming flow JSON. |
 | Notebooks 01–03 | `notebooks/` | Generate the descriptive tables/figures needed for the report. |
 
 The final table used for modeling lives at `data/processed/elephant_mice_flows_paper_small.csv`, while `data/intermediate/` now contains the merged file, GLF schema, sampled paper base, and the Chebyshev-labeled table for downstream analyses or alternative thresholds.
@@ -90,6 +92,37 @@ cat reports/results_baselines.md
 ```
 
 Each stage writes deterministic outputs into `data/intermediate/` and `data/processed/`, enabling notebook reuse and reproducibility.
+
+### Optional online loop
+
+To mirror the paper’s “periodic/online” threshold refresh, run:
+
+```bash
+python -m src.online.threshold_updater --source data/intermediate/cicids2017_paper_schema_glf.csv --window 7d --interval 300s
+```
+
+Use `--run-once` to recompute a single time (handy for CI) or leave it running to continually update `artifacts/threshold.json`. The updater records the window, cutoff, μ, σ, and as-of timestamp so downstream consumers know the context of the current threshold.
+
+For a first-flow decision that matches the paper’s narrative (model + counting override):
+
+```bash
+python -m src.online.predict --flow path/to/flow.json --model-path artifacts/model.joblib --threshold-path artifacts/threshold.json
+```
+
+The predictor returns `ml_pred`, the `counting_flag` (if the 4-tuple’s bytes exceed the refreshed threshold after adding the current flow), and a `final_flag` that favors the counting signal when present.
+
+### Quick demo without CIC-IDS2017
+
+If you just want to exercise the pipeline without downloading CIC-IDS2017, run:
+
+```bash
+python scripts/generate_synthetic_data.py
+python -m src.models.classical_baselines --export-model
+python -m src.online.threshold_updater --source data/intermediate/cicids2017_paper_schema_glf.csv --window 7d --interval 300s --run-once
+python -m src.online.predict --flow artifacts/sample_flow.json --model-path artifacts/model.joblib --threshold-path artifacts/threshold.json --history-path data/intermediate/cicids2017_paper_schema_glf.csv
+```
+
+The helper script populates small synthetic CSVs and a `sample_flow.json`, allowing you to train, export the model, refresh the Chebyshev threshold, and emit an online prediction end-to-end.
 
 ## Methodological notes
 
