@@ -23,30 +23,32 @@ from src.utils.logging_utils import get_logger
 LOGGER = get_logger("classical_baselines")
 DATA_PATH = CONFIG.paper_small_csv
 
-BASE_FEATURES = [
+FEATURE_COLUMNS = [
     "src_port",
     "dst_port",
-    "bidirectional_first_seen_ms",
-    "bidirectional_last_seen_ms",
+    "src2dst_first_seen_ms",
+    "src2dst_last_seen_ms",
     "bidirectional_bytes",
 ]
-INCLUDE_SIZE_TRAFFIC = True
+
+
+def _format_priors(series: pd.Series) -> dict[int, str]:
+    return {int(k): f"{v * 100:.2f}%" for k, v in series.items()}
 
 
 def load_data():
     df = pd.read_csv(DATA_PATH)
     df.columns = df.columns.str.strip()
 
-    use_cols = BASE_FEATURES.copy()
-    if INCLUDE_SIZE_TRAFFIC and "size_traffic" in df.columns:
-        df = pd.get_dummies(df, columns=["size_traffic"], drop_first=True)
-        use_cols += [c for c in df.columns if c.startswith("size_traffic_")]
-
     for col in ("src_ip", "dst_ip"):
         if col in df.columns:
             df = df.drop(columns=[col])
 
-    X = df[use_cols]
+    missing = [col for col in FEATURE_COLUMNS if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required feature columns: {missing}")
+
+    X = df[FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce")
     y = df["target_traffic"].astype(int)
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -63,7 +65,14 @@ def load_data():
         len(X_test),
         100 * y_train.mean(),
         100 * y_test.mean(),
-        use_cols,
+        FEATURE_COLUMNS,
+    )
+    train_priors = y_train.value_counts(normalize=True)
+    test_priors = y_test.value_counts(normalize=True)
+    LOGGER.info(
+        "Class priors train=%s test=%s",
+        _format_priors(train_priors),
+        _format_priors(test_priors),
     )
     return X_train, X_test, y_train, y_test
 
