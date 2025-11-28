@@ -4,7 +4,7 @@ This repository replicates the **methodology** (not the proprietary dataset) of 
 
 ## Project layout
 
-```
+```text
 elephant-mice-cicids2017/
 ├─ README.md
 ├─ requirements.txt
@@ -38,9 +38,11 @@ elephant-mice-cicids2017/
 ├─ scripts/
 │  ├─ 00_download_instructions.txt
 │  ├─ 01_prepare_data.sh
-│  └─ 02_train_models.sh
+│  ├─ 02_train_models.sh
+│  └─ 03_train_feature_sets.sh
 └─ reports/
    ├─ results_baselines.md
+   ├─ results_feature_sets.md
    └─ plots/
 ```
 
@@ -59,14 +61,14 @@ See `scripts/00_download_instructions.txt` for a concise reminder.
 | Merge raw CSVs | `src/data_prep/merge_cicids2017.py` | Concatenates every GLF daily capture into `data/intermediate/cicids2017_merged.csv` with typed columns and strict decoding modes. |
 | Paper schema | `src/data_prep/to_paper_schema_from_generated.py` | Maps the merged file to NFStream-like fields, coerces ports/protocols, converts Flow Duration to milliseconds, and asserts the Flow Bytes/s sanity check. |
 | Paper base | `src/data_prep/build_experiment_set_paper.py` | Samples ~55,726 flows from the schema, logs bidirectional byte quantiles, and writes `data/intermediate/cicids2017_paper_base_glf.csv`. |
-| Chebyshev labeling | `src/data_prep/label_elephants_chebyshev.py` | Computes the μ+3σ Chebyshev cutoff from aggregated 4-tuple bytes, applies it per flow (online view), logs stats to `artifacts/threshold.json`, writes the full schema to `data/intermediate/cicids2017_labeled_chebyshev_glf.csv`, and publishes the trimmed modeling subset to `data/processed/elephant_mice_flows_paper_small.csv`. |
-| Baselines | `src/models/classical_baselines.py` | Runs LR, SVM, RF, DT, KNN, LDA, NB over the five paper features using 5-fold stratified group CV (4-tuple groups), aggregates accuracy/precision/recall/F1, and saves a confusion matrix plot to `reports/plots/confusion_matrix.png`. |
+| Labeling (Chebyshev + quantile) | `src/data_prep/label_elephants_chebyshev.py` | Computes both the μ+3σ Chebyshev cutoff **and** the 99th-percentile bytes threshold from aggregated 4-tuples, writes `target_traffic` and `target_99pct`, logs stats to `artifacts/threshold.json`, and saves the labeled table to `data/intermediate/cicids2017_labeled_chebyshev_glf.csv` (plus the trimmed modeling subset in `data/processed/`). |
+| Baselines | `src/models/classical_baselines.py` | Runs LR, SVM, RF, DT, KNN, LDA, NB over selected feature sets (`baseline`, `non_leaky`, `early`) via 5-fold stratified group CV, aggregates accuracy/precision/recall/F1/**AUC-ROC/AUC-PR**, and saves confusion matrix + ROC/PR plots to `reports/plots/`. |
 | Evaluation helper | `src/models/evaluate.py` | Shared metrics/report helpers. |
 | Online threshold | `src/online/threshold_updater.py` | Recomputes μ, σ, and the Chebyshev cutoff on a sliding window (default 7 days) and refreshes `artifacts/threshold.json` on an interval so the “periodic/online” narrative remains true in deployment. |
 | Online inference | `src/online/predict.py` | Loads a persisted scikit-learn model plus the refreshed threshold to deliver an early ML prediction and a counting-based override for a single incoming flow JSON. |
-| Notebooks 01–03 | `notebooks/` | Generate the descriptive tables/figures needed for the report. |
+| Notebooks 01-03 | `notebooks/` | Generate the descriptive tables/figures needed for the report. |
 
-The final table used for modeling lives at `data/processed/elephant_mice_flows_paper_small.csv`, while `data/intermediate/` now contains the merged file, GLF schema, sampled paper base, and the Chebyshev-labeled table for downstream analyses or alternative thresholds.
+Modeling currently reads from `data/intermediate/cicids2017_labeled_chebyshev_glf.csv` (contains both label columns) while `data/processed/elephant_mice_flows_paper_small.csv` remains available for legacy five-feature analyses.
 
 ## Workflow
 
@@ -89,6 +91,14 @@ Train and log model baselines:
 ```bash
 bash scripts/02_train_models.sh
 cat reports/results_baselines.md
+```
+
+Compare all feature sets (baseline vs. non-leaky vs. early) with the richer metrics/plots:
+
+```bash
+bash scripts/03_train_feature_sets.sh
+cat reports/results_feature_sets.md
+ls reports/plots/  # baseline_*.png, non_leaky_*.png, early_*.png
 ```
 
 Each stage writes deterministic outputs into `data/intermediate/` and `data/processed/`, enabling notebook reuse and reproducibility.
@@ -127,9 +137,11 @@ The helper script populates small synthetic CSVs and a `sample_flow.json`, allow
 ## Methodological notes
 
 - The original paper used a private enterprise backbone trace; this project **mirrors the methodology** using public flows.
-- Elephant detection is operationally defined as “bytes ≥ μ + 3·σ” (Chebyshev). The cutoff is learned from aggregated 4-tuples but applied to each flow’s bytes to avoid future knowledge; on CIC-IDS2017 this yields only ≈0.09% elephants (49 of 55,726 flows), far below the ≈5% reported in the proprietary trace.
-- Baseline models follow the same family (classical ML with a five-feature vector) and are now evaluated with 5-fold stratified group cross-validation so that no 4-tuple spans folds. Metrics are reported as means ± std. dev., and the best model’s confusion matrix is stored in `reports/plots/confusion_matrix.png`.
-- Notebook outputs (9 figures, 3 tables) are tailored for academic reporting: dataset profiling, threshold justification, and classifier benchmarking.
+- Elephant detection uses two complementary definitions:
+  - **Chebyshev (μ + 3·σ)** → `target_traffic` for paper-faithful reproduction (≈0.09% positives).
+  - **99th percentile** → `target_99pct` for non-leaky & early-available experiments (≈1% positives, avoids label leakage from total bytes).
+- Baseline models follow the same classical family but now expose a `--feature-set` selector (`baseline`, `non_leaky`, `early`) so experiments can exclude bytes or mimic early-flow observability. All runs use 5-fold stratified group CV, report accuracy/precision/recall/F1/**AUC-ROC/AUC-PR**, and emit confusion + ROC/PR plots under `reports/plots/`.
+- Notebook outputs cover dataset profiling, threshold justification (Chebyshev vs. quantile), and classifier benchmarking for all feature sets.
 
 ## Next steps
 

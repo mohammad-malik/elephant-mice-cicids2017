@@ -1,9 +1,11 @@
 {
-  "method": "flow",
+  "method": "4tuple",
   "threshold_bytes": 835352.0828491325,
   "mean_bytes": 8561.676688271875,
   "std_bytes": 275596.80205362017,
   "elephant_fraction": 0.0008793023005419374,
   "num_flows": 55726,
-  "num_tuples": 45668
+  "num_tuples": 45668,
+  "quantile_threshold_bytes": 84906.32,
+  "quantile_elephant_fraction": 0.008344399382693895
 }

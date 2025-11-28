@@ -26,12 +26,40 @@ PAPER_FEATURE_COLUMNS: tuple[str, ...] = (
     "bidirectional_bytes",
 )
 
+# Non-leaky full-flow features exclude total bytes columns to avoid leakage.
+FEATURE_COLUMNS_NON_LEAKY: tuple[str, ...] = (
+    "src_port",
+    "dst_port",
+    "protocol",
+    "bidirectional_duration_ms",
+    "bidirectional_packets",
+    "src2dst_packets",
+    "dst2src_packets",
+    "Flow IAT Mean",
+    "Flow IAT Std",
+    "Fwd Packet Length Mean",
+    "Bwd Packet Length Mean",
+)
+
+# Early-available features approximate signals a live system might have soon after flow start.
+FEATURE_COLUMNS_EARLY: tuple[str, ...] = (
+    "src_port",
+    "dst_port",
+    "protocol",
+    "bidirectional_packets",
+    "src2dst_packets",
+    "dst2src_packets",
+    "bidirectional_duration_ms",
+)
+
 
 @dataclass(frozen=True)
 class PipelineConfig:
     elephant_percent: float = 0.09
     random_state: int = 67
     feature_columns: tuple[str, ...] = PAPER_FEATURE_COLUMNS
+    feature_columns_non_leaky: tuple[str, ...] = FEATURE_COLUMNS_NON_LEAKY
+    feature_columns_early: tuple[str, ...] = FEATURE_COLUMNS_EARLY
 
     @property
     def merged_csv(self) -> Path:
